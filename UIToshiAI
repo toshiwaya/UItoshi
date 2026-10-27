@@ -1,33 +1,32 @@
 
 --[[
     Toshi-AI UI Library
-    Version: 2.1
-    Style: Monochrome
-    Platform: Roblox Luau
+    Version 3.0
+    Monochrome | Responsive | Lifecycle-managed
 ]]
 
-local SimpleUI = {}
+local ToshiAI = {}
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 
 local COLORS = {
-    Background = Color3.fromRGB(13, 13, 15),
+    Background = Color3.fromRGB(14, 14, 16),
     Panel = Color3.fromRGB(21, 21, 24),
-    Element = Color3.fromRGB(30, 30, 34),
-    Hover = Color3.fromRGB(44, 44, 49),
+    Element = Color3.fromRGB(31, 31, 35),
+    Hover = Color3.fromRGB(43, 43, 48),
     Border = Color3.fromRGB(53, 53, 59),
     White = Color3.fromRGB(245, 245, 247),
     Gray = Color3.fromRGB(158, 158, 166),
-    DarkGray = Color3.fromRGB(85, 85, 93),
+    DarkGray = Color3.fromRGB(86, 86, 94),
 }
 
 local function create(className, properties, parent)
     local object = Instance.new(className)
 
-    for property, value in pairs(properties or {}) do
-        object[property] = value
+    for key, value in pairs(properties or {}) do
+        object[key] = value
     end
 
     object.Parent = parent
@@ -43,9 +42,24 @@ end
 local function outline(object, transparency)
     return create("UIStroke", {
         Color = COLORS.Border,
-        Thickness = 1,
         Transparency = transparency or 0,
+        Thickness = 1,
     }, object)
+end
+
+local function connect(bag, signal, callback)
+    local connection = signal:Connect(callback)
+    table.insert(bag, connection)
+    return connection
+end
+
+local function disconnectAll(bag)
+    for _, connection in ipairs(bag) do
+        if connection.Connected then
+            connection:Disconnect()
+        end
+    end
+    table.clear(bag)
 end
 
 local function animate(object, duration, properties)
@@ -58,19 +72,18 @@ local function animate(object, duration, properties)
         ),
         properties
     )
-
     animation:Play()
     return animation
 end
 
-local function makeLabel(parent, value, size, color, font)
+local function label(parent, value, size, color, font)
     return create("TextLabel", {
         BackgroundTransparency = 1,
         Size = size or UDim2.new(1, 0, 0, 22),
         Font = font or Enum.Font.Gotham,
-        Text = value or "",
+        Text = tostring(value or ""),
         TextColor3 = color or COLORS.White,
-        TextSize = 13,
+        TextSize = 12,
         TextXAlignment = Enum.TextXAlignment.Left,
         TextYAlignment = Enum.TextYAlignment.Center,
         TextWrapped = true,
@@ -87,27 +100,34 @@ local function makeButton(parent, value, height)
         TextColor3 = COLORS.White,
         TextSize = 12,
         Font = Enum.Font.GothamMedium,
+        TextTruncate = Enum.TextTruncate.AtEnd,
     }, parent)
 
     round(object, 8)
-    outline(object, 0.35)
+    outline(object, 0.4)
 
-    object.MouseEnter:Connect(function()
+    local hoverConnections = {}
+
+    connect(hoverConnections, object.MouseEnter, function()
         animate(object, 0.12, {
             BackgroundColor3 = COLORS.Hover,
         })
     end)
 
-    object.MouseLeave:Connect(function()
+    connect(hoverConnections, object.MouseLeave, function()
         animate(object, 0.12, {
             BackgroundColor3 = COLORS.Element,
         })
     end)
 
+    object.Destroying:Connect(function()
+        disconnectAll(hoverConnections)
+    end)
+
     return object
 end
 
-local function safeCallback(callback, ...)
+local function safeCall(callback, ...)
     if not callback then
         return
     end
@@ -118,19 +138,16 @@ local function safeCallback(callback, ...)
     end
 end
 
--- Main constructor
-function SimpleUI.new(options)
+function ToshiAI.new(options)
     options = options or {}
 
     local player = Players.LocalPlayer
-    assert(player, "Toshi-AI must be created on the client")
+    assert(player, "Toshi-AI must be created from a client LocalScript")
 
     local playerGui = player:WaitForChild("PlayerGui")
-
-    -- Remove an older copy with the same name.
     local guiName = options.Name or "Toshi-AI"
-    local previous = playerGui:FindFirstChild(guiName)
 
+    local previous = playerGui:FindFirstChild(guiName)
     if previous then
         previous:Destroy()
     end
@@ -138,25 +155,563 @@ function SimpleUI.new(options)
     local screen = create("ScreenGui", {
         Name = guiName,
         ResetOnSpawn = false,
-        IgnoreGuiInset = true,
+        IgnoreGuiInset = false,
         ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-        DisplayOrder = 100,
+        DisplayOrder = 50,
     }, playerGui)
 
     local destroyed = false
     local minimized = false
-    local activeTab = nil
     local tabs = {}
-    local connections = {}
+    local activeTab
+    local mainConnections = {}
+    local interactionConnections = {}
 
     local api = {
         Screen = screen,
     }
 
-    local function track(connection)
-        table.insert(connections, connection)
-        return connection
+    local function isAlive()
+        return not destroyed and screen.Parent ~= nil
     end
+
+    local function track(signal, callback)
+        return connect(mainConnections, signal, callback)
+    end
+
+    -- Main window
+    local window = create("Frame", {
+        Name = "MainWindow",
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.fromScale(0.5, 0.5),
+        Size = UDim2.fromOffset(600, 420),
+        BackgroundColor3 = COLORS.Background,
+        BorderSizePixel = 0,
+        Visible = false,
+        ClipsDescendants = true,
+    }, screen)
+
+    round(window, 12)
+    outline(window, 0)
+
+    local header = create("Frame", {
+        Name = "Header",
+        Size = UDim2.new(1, 0, 0, 46),
+        BackgroundColor3 = COLORS.Panel,
+        BorderSizePixel = 0,
+        Active = true,
+    }, window)
+
+    local brand = label(
+        header, "T", UDim2.fromOffset(24, 28),
+        COLORS.White, Enum.Font.GothamBlack
+    )
+    brand.Position = UDim2.fromOffset(14, 9)
+    brand.TextSize = 21
+
+    local title = label(
+        header, options.Title or "Toshi-AI",
+        UDim2.new(1, -150, 0, 24),
+        COLORS.White, Enum.Font.GothamBold
+    )
+    title.Position = UDim2.fromOffset(45, 11)
+    title.TextSize = 14
+
+    local version = label(
+        header, "v3.0", UDim2.fromOffset(36, 20), COLORS.Gray
+    )
+    version.Position = UDim2.new(1, -116, 0, 13)
+    version.TextSize = 10
+
+    local minimizeButton = makeButton(header, "—", 28)
+    minimizeButton.Size = UDim2.fromOffset(28, 28)
+    minimizeButton.Position = UDim2.new(1, -75, 0, 9)
+
+    local closeButton = makeButton(header, "×", 28)
+    closeButton.Size = UDim2.fromOffset(28, 28)
+    closeButton.Position = UDim2.new(1, -40, 0, 9)
+    closeButton.TextSize = 18
+
+    -- Sidebar and content
+    local sidebar = create("Frame", {
+        Name = "Sidebar",
+        Position = UDim2.fromOffset(0, 46),
+        Size = UDim2.new(0, 120, 1, -46),
+        BackgroundColor3 = COLORS.Panel,
+        BorderSizePixel = 0,
+    }, window)
+
+    create("UIPadding", {
+        PaddingTop = UDim.new(0, 10),
+        PaddingLeft = UDim.new(0, 8),
+        PaddingRight = UDim.new(0, 8),
+    }, sidebar)
+
+    create("UIListLayout", {
+        Padding = UDim.new(0, 6),
+        SortOrder = Enum.SortOrder.LayoutOrder,
+    }, sidebar)
+
+    local separator = create("Frame", {
+        Position = UDim2.new(0, 120, 0, 46),
+        Size = UDim2.new(0, 1, 1, -46),
+        BackgroundColor3 = COLORS.Border,
+        BorderSizePixel = 0,
+    }, window)
+
+    local pages = create("Frame", {
+        Name = "Pages",
+        Position = UDim2.new(0, 121, 0, 46),
+        Size = UDim2.new(1, -121, 1, -46),
+        BackgroundTransparency = 1,
+        ClipsDescendants = true,
+    }, window)
+
+    -- Minimized floating logo
+    local floating = makeButton(screen, "T", 48)
+    floating.Name = "FloatingLogo"
+    floating.Size = UDim2.fromOffset(48, 48)
+    floating.AnchorPoint = Vector2.new(0, 0.5)
+    floating.Position = UDim2.new(0, 16, 0.5, 0)
+    floating.BackgroundColor3 = COLORS.Panel
+    floating.Font = Enum.Font.GothamBlack
+    floating.TextSize = 22
+    floating.Visible = false
+    floating.ZIndex = 20
+    outline(floating, 0.1)
+
+    -- Responsive sizing
+    local cameraConnection
+
+    local function updateLayout()
+        if not isAlive() then
+            return
+        end
+
+        local camera = workspace.CurrentCamera
+        if not camera then
+            return
+        end
+
+        local viewport = camera.ViewportSize
+        local mobile = viewport.X < 600
+
+        local width = math.max(280, math.min(600, viewport.X - 24))
+        local height = math.max(280, math.min(440, viewport.Y - 60))
+        local sidebarWidth = mobile and 94 or 120
+
+        window.Size = UDim2.fromOffset(width, height)
+
+        sidebar.Size = UDim2.new(0, sidebarWidth, 1, -46)
+        separator.Position = UDim2.new(0, sidebarWidth, 0, 46)
+        pages.Position = UDim2.new(0, sidebarWidth + 1, 0, 46)
+        pages.Size = UDim2.new(1, -(sidebarWidth + 1), 1, -46)
+
+        title.Size = UDim2.new(1, mobile and -135 or -150, 0, 24)
+        version.Visible = not mobile
+
+        for _, entry in ipairs(tabs) do
+            entry.Button.TextSize = mobile and 10 or 12
+            entry.Button.Text = mobile
+                and entry.ShortName or ("   " .. entry.Name)
+        end
+    end
+
+    local function switchTab(entry)
+        if not isAlive() then
+            return
+        end
+
+        activeTab = entry
+
+        for _, tab in ipairs(tabs) do
+            local selected = tab == entry
+            tab.Page.Visible = selected
+            tab.Button.BackgroundColor3 =
+                selected and COLORS.Hover or COLORS.Element
+            tab.Button.TextColor3 =
+                selected and COLORS.White or COLORS.Gray
+        end
+    end
+
+    -- Tabs and components
+    function api:CreateTab(name)
+        assert(isAlive(), "Toshi-AI has been destroyed")
+
+        local page = create("ScrollingFrame", {
+            Name = name .. "Page",
+            Size = UDim2.fromScale(1, 1),
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+            ScrollBarThickness = 3,
+            ScrollBarImageColor3 = COLORS.DarkGray,
+            CanvasSize = UDim2.new(),
+            AutomaticCanvasSize = Enum.AutomaticSize.Y,
+            Visible = false,
+        }, pages)
+
+        create("UIPadding", {
+            PaddingTop = UDim.new(0, 12),
+            PaddingLeft = UDim.new(0, 12),
+            PaddingRight = UDim.new(0, 12),
+            PaddingBottom = UDim.new(0, 12),
+        }, page)
+
+        create("UIListLayout", {
+            Padding = UDim.new(0, 8),
+            SortOrder = Enum.SortOrder.LayoutOrder,
+        }, page)
+
+        local tabButton = makeButton(sidebar, "   " .. name, 35)
+
+        local entry = {
+            Name = name,
+            ShortName = string.sub(name, 1, 1),
+            Page = page,
+            Button = tabButton,
+        }
+
+        table.insert(tabs, entry)
+
+        track(tabButton.Activated, function()
+            switchTab(entry)
+        end)
+
+        local tabApi = {}
+
+        function tabApi:Section(value)
+            local heading = label(
+                page, string.upper(value),
+                UDim2.new(1, 0, 0, 22),
+                COLORS.Gray, Enum.Font.GothamBold
+            )
+            heading.TextSize = 10
+            return heading
+        end
+
+        function tabApi:Label(value)
+            local box = create("Frame", {
+                Size = UDim2.new(1, 0, 0, 42),
+                BackgroundColor3 = COLORS.Panel,
+                BorderSizePixel = 0,
+            }, page)
+            round(box, 8)
+            outline(box, 0.5)
+
+            local lbl = label(
+                box, value,
+                UDim2.new(1, -20, 1, -8),
+                COLORS.Gray
+            )
+            lbl.Position = UDim2.fromOffset(10, 4)
+            return lbl
+        end
+
+        function tabApi:Button(value, callback)
+            local b = makeButton(page, value, 38)
+
+            track(b.Activated, function()
+                safeCall(callback)
+            end)
+
+            return b
+        end
+
+        function tabApi:Toggle(value, default, callback)
+            local enabled = default == true
+            local b = makeButton(page, "", 40)
+
+            local lbl = label(
+                b, value, UDim2.new(1, -60, 1, 0), COLORS.White
+            )
+            lbl.Position = UDim2.fromOffset(10, 0)
+
+            local trackFrame = create("Frame", {
+                Size = UDim2.fromOffset(34, 18),
+                Position = UDim2.new(1, -44, 0.5, -9),
+                BackgroundColor3 = enabled and COLORS.White or COLORS.DarkGray,
+                BorderSizePixel = 0,
+            }, b)
+            round(trackFrame, 20)
+
+            local knob = create("Frame", {
+                Size = UDim2.fromOffset(14, 14),
+                Position = enabled
+                    and UDim2.new(1, -16, 0.5, -7)
+                    or UDim2.new(0, 2, 0.5, -7),
+                BackgroundColor3 = COLORS.Background,
+                BorderSizePixel = 0,
+            }, trackFrame)
+            round(knob, 20)
+
+            local function set(value, fire)
+                enabled = value == true
+
+                animate(trackFrame, 0.12, {
+                    BackgroundColor3 = enabled and COLORS.White
+                        or COLORS.DarkGray,
+                })
+
+                animate(knob, 0.12, {
+                    Position = enabled
+                        and UDim2.new(1, -16, 0.5, -7)
+                        or UDim2.new(0, 2, 0.5, -7),
+                })
+
+                if fire then
+                    safeCall(callback, enabled)
+                end
+            end
+
+            track(b.Activated, function()
+                set(not enabled, true)
+            end)
+
+            return {
+                Get = function()
+                    return enabled
+                end,
+                Set = function(_, value)
+                    set(value, true)
+                end,
+            }
+        end
+
+        function tabApi:Slider(value, min, max, default, callback)
+            min = min or 0
+            max = max or 100
+
+            assert(max > min, "Slider max must exceed min")
+
+            local current = math.clamp(default or min, min, max)
+
+            local box = create("Frame", {
+                Size = UDim2.new(1, 0, 0, 62),
+                BackgroundColor3 = COLORS.Element,
+                BorderSizePixel = 0,
+            }, page)
+            round(box, 8)
+            outline(box, 0.5)
+
+            local lbl = label(
+                box, value, UDim2.new(1, -60, 0, 20), COLORS.White
+            )
+            lbl.Position = UDim2.fromOffset(10, 5)
+
+            local valueLabel = label(
+                box, tostring(current),
+                UDim2.fromOffset(42, 20), COLORS.Gray
+            )
+            valueLabel.Position = UDim2.new(1, -51, 0, 5)
+            valueLabel.TextXAlignment = Enum.TextXAlignment.Right
+
+            local rail = create("TextButton", {
+                Position = UDim2.fromOffset(10, 39),
+                Size = UDim2.new(1, -20, 0, 12),
+                BackgroundTransparency = 1,
+                Text = "",
+                AutoButtonColor = false,
+                Active = true,
+            }, box)
+
+            local fill = create("Frame", {
+                Position = UDim2.new(0, 0, 0.5, -2),
+                Size = UDim2.new((current - min) / (max - min), 0, 0, 4),
+                BackgroundColor3 = COLORS.White,
+                BorderSizePixel = 0,
+            }, rail)
+            round(fill, 4)
+
+            local knob = create("Frame", {
+                AnchorPoint = Vector2.new(0.5, 0.5),
+                Position = UDim2.new(
+                    (current - min) / (max - min), 0, 0.5, 0
+                ),
+                Size = UDim2.fromOffset(12, 12),
+                BackgroundColor3 = COLORS.White,
+                BorderSizePixel = 0,
+            }, rail)
+            round(knob, 12)
+
+            local sliding = false
+            local dragConnections = {}
+
+            local function update(x)
+                if not rail.Parent then
+                    return
+                end
+
+                local width = rail.AbsoluteSize.X
+                if width <= 0 then
+                    return
+                end
+
+                local ratio = math.clamp(
+                    (x - rail.AbsolutePosition.X) / width,
+                    0, 1
+                )
+
+                current = math.floor(min + (max - min) * ratio + 0.5)
+                ratio = (current - min) / (max - min)
+
+                valueLabel.Text = tostring(current)
+                fill.Size = UDim2.new(ratio, 0, 0, 4)
+                knob.Position = UDim2.new(ratio, 0, 0.5, 0)
+
+                safeCall(callback, current)
+            end
+
+            local function stopDragging()
+                sliding = false
+                disconnectAll(dragConnections)
+            end
+
+            local function beginDragging(input)
+                if input.UserInputType ~= Enum.UserInputType.MouseButton1
+                    and input.UserInputType ~= Enum.UserInputType.Touch then
+                    return
+                end
+
+                stopDragging()
+                sliding = true
+                update(input.Position.X)
+
+                connect(dragConnections, UserInputService.InputChanged, function(changed)
+                    if sliding and (
+                        changed.UserInputType == Enum.UserInputType.MouseMovement
+                        or changed.UserInputType == Enum.UserInputType.Touch
+                    ) then
+                        update(changed.Position.X)
+                    end
+                end)
+
+                connect(dragConnections, UserInputService.InputEnded, function(ended)
+                    if ended.UserInputType == Enum.UserInputType.MouseButton1
+                        or ended.UserInputType == Enum.UserInputType.Touch then
+                        stopDragging()
+                    end
+                end)
+            end
+
+            track(rail.InputBegan, beginDragging)
+
+            track(rail.Destroying, stopDragging)
+
+            return {
+                Get = function()
+                    return current
+                end,
+            }
+        end
+
+        if not activeTab then
+            switchTab(entry)
+        end
+
+        updateLayout()
+        return tabApi
+    end
+
+    -- Minimize and restore
+    local function setMinimized(value)
+        if not isAlive() then
+            return
+        end
+
+        minimized = value
+
+        window.Visible = not value
+        floating.Visible = value
+    end
+
+    track(minimizeButton.Activated, function()
+        setMinimized(true)
+    end)
+
+    track(floating.Activated, function()
+        setMinimized(false)
+    end)
+
+    track(closeButton.Activated, function()
+        api:Destroy()
+    end)
+
+    function api:Minimize()
+        setMinimized(true)
+    end
+
+    function api:Restore()
+        setMinimized(false)
+    end
+
+    function api:Destroy()
+        if destroyed then
+            return
+        end
+
+        destroyed = true
+
+        disconnectAll(interactionConnections)
+        disconnectAll(mainConnections)
+
+        if cameraConnection then
+            cameraConnection:Disconnect()
+            cameraConnection = nil
+        end
+
+        screen:Destroy()
+    end
+
+    -- Drag window. Connections are active only during a drag.
+    local dragging = false
+    local dragStart
+    local startPosition
+    local dragConnections = {}
+
+    local function stopWindowDrag()
+        dragging = false
+        disconnectAll(dragConnections)
+    end
+
+    track(header.InputBegan, function(input)
+        if input.UserInputType ~= Enum.UserInputType.MouseButton1
+            and input.UserInputType ~= Enum.UserInputType.Touch then
+            return
+        end
+
+        stopWindowDrag()
+
+        dragging = true
+        dragStart = input.Position
+        startPosition = window.Position
+
+        connect(dragConnections, UserInputService.InputChanged, function(changed)
+            if not dragging then
+                return
+            end
+
+            if changed.UserInputType ~= Enum.UserInputType.MouseMovement
+                and changed.UserInputType ~= Enum.UserInputType.Touch then
+                return
+            end
+
+            local delta = changed.Position - dragStart
+
+            window.Position = UDim2.new(
+                startPosition.X.Scale,
+                startPosition.X.Offset + delta.X,
+                startPosition.Y.Scale,
+                startPosition.Y.Offset + delta.Y
+            )
+        end)
+
+        connect(dragConnections, UserInputService.InputEnded, function(ended)
+            if ended.UserInputType == Enum.UserInputType.MouseButton1
+                or ended.UserInputType == Enum.UserInputType.Touch then
+                stopWindowDrag()
+            end
+        end)
+    end)
 
     -- Loading screen
     local loading = create("Frame", {
@@ -167,42 +722,36 @@ function SimpleUI.new(options)
         ZIndex = 50,
     }, screen)
 
-    local loadingLogo = makeLabel(
-        loading,
-        "T",
+    local logo = label(
+        loading, "T",
         UDim2.fromOffset(100, 70),
-        COLORS.White,
-        Enum.Font.GothamBlack
+        COLORS.White, Enum.Font.GothamBlack
     )
-    loadingLogo.AnchorPoint = Vector2.new(0.5, 0.5)
-    loadingLogo.Position = UDim2.fromScale(0.5, 0.37)
-    loadingLogo.TextSize = 46
-    loadingLogo.TextXAlignment = Enum.TextXAlignment.Center
-    loadingLogo.ZIndex = 51
+    logo.AnchorPoint = Vector2.new(0.5, 0.5)
+    logo.Position = UDim2.fromScale(0.5, 0.36)
+    logo.TextSize = 46
+    logo.TextXAlignment = Enum.TextXAlignment.Center
+    logo.ZIndex = 51
 
-    local loadingTitle = makeLabel(
-        loading,
-        options.Title or "Toshi-AI",
-        UDim2.fromOffset(280, 32),
-        COLORS.White,
-        Enum.Font.GothamBold
+    local loadingTitle = label(
+        loading, options.Title or "Toshi-AI",
+        UDim2.fromOffset(280, 30),
+        COLORS.White, Enum.Font.GothamBold
     )
     loadingTitle.AnchorPoint = Vector2.new(0.5, 0.5)
-    loadingTitle.Position = UDim2.fromScale(0.5, 0.46)
-    loadingTitle.TextSize = 19
+    loadingTitle.Position = UDim2.fromScale(0.5, 0.45)
+    loadingTitle.TextSize = 18
     loadingTitle.TextXAlignment = Enum.TextXAlignment.Center
     loadingTitle.ZIndex = 51
 
-    local loadingStatus = makeLabel(
-        loading,
-        "Initializing interface...",
-        UDim2.fromOffset(280, 24),
-        COLORS.Gray
+    local status = label(
+        loading, "Initializing interface...",
+        UDim2.fromOffset(280, 24), COLORS.Gray
     )
-    loadingStatus.AnchorPoint = Vector2.new(0.5, 0.5)
-    loadingStatus.Position = UDim2.fromScale(0.5, 0.515)
-    loadingStatus.TextXAlignment = Enum.TextXAlignment.Center
-    loadingStatus.ZIndex = 51
+    status.AnchorPoint = Vector2.new(0.5, 0.5)
+    status.Position = UDim2.fromScale(0.5, 0.51)
+    status.TextXAlignment = Enum.TextXAlignment.Center
+    status.ZIndex = 51
 
     local progressBack = create("Frame", {
         Size = UDim2.fromOffset(230, 5),
@@ -223,506 +772,35 @@ function SimpleUI.new(options)
     }, progressBack)
     round(progress, 5)
 
-    local progressText = makeLabel(
-        loading,
-        "0%",
-        UDim2.fromOffset(100, 20),
-        COLORS.Gray
+    local percent = label(
+        loading, "0%", UDim2.fromOffset(100, 20), COLORS.Gray
     )
-    progressText.AnchorPoint = Vector2.new(0.5, 0.5)
-    progressText.Position = UDim2.fromScale(0.5, 0.60)
-    progressText.TextXAlignment = Enum.TextXAlignment.Center
-    progressText.ZIndex = 51
+    percent.AnchorPoint = Vector2.new(0.5, 0.5)
+    percent.Position = UDim2.fromScale(0.5, 0.60)
+    percent.TextXAlignment = Enum.TextXAlignment.Center
+    percent.ZIndex = 51
 
-    -- Main window
-    local window = create("Frame", {
-        Name = "MainWindow",
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        Position = UDim2.fromScale(0.5, 0.5),
-        Size = UDim2.fromScale(0.78, 0.74),
-        BackgroundColor3 = COLORS.Background,
-        BorderSizePixel = 0,
-        Visible = false,
-        ClipsDescendants = true,
-    }, screen)
+    -- Responsive viewport updates
+    local function bindCamera()
+        if cameraConnection then
+            cameraConnection:Disconnect()
+            cameraConnection = nil
+        end
 
-    round(window, 12)
-    outline(window, 0)
-
-    create("UISizeConstraint", {
-        MinSize = Vector2.new(290, 300),
-        MaxSize = Vector2.new(760, 560),
-    }, window)
-
-    -- Header
-    local header = create("Frame", {
-        Name = "Header",
-        Size = UDim2.new(1, 0, 0, 48),
-        BackgroundColor3 = COLORS.Panel,
-        BorderSizePixel = 0,
-        Active = true,
-    }, window)
-
-    local brand = makeLabel(
-        header,
-        "T",
-        UDim2.fromOffset(25, 30),
-        COLORS.White,
-        Enum.Font.GothamBlack
-    )
-    brand.Position = UDim2.fromOffset(14, 9)
-    brand.TextSize = 22
-
-    local title = makeLabel(
-        header,
-        options.Title or "Toshi-AI",
-        UDim2.new(1, -150, 0, 24),
-        COLORS.White,
-        Enum.Font.GothamBold
-    )
-    title.Position = UDim2.fromOffset(46, 12)
-    title.TextSize = 14
-
-    local version = makeLabel(
-        header,
-        "v2.1",
-        UDim2.fromOffset(35, 20),
-        COLORS.Gray
-    )
-    version.Position = UDim2.new(1, -121, 0, 14)
-    version.TextSize = 10
-
-    local minimizeButton = makeButton(header, "—", 28)
-    minimizeButton.Size = UDim2.fromOffset(29, 28)
-    minimizeButton.Position = UDim2.new(1, -78, 0, 10)
-
-    local closeButton = makeButton(header, "×", 28)
-    closeButton.Size = UDim2.fromOffset(29, 28)
-    closeButton.Position = UDim2.new(1, -42, 0, 10)
-    closeButton.TextSize = 18
-
-    -- Sidebar
-    local sidebar = create("Frame", {
-        Name = "Sidebar",
-        Position = UDim2.fromOffset(0, 48),
-        Size = UDim2.new(0, 125, 1, -48),
-        BackgroundColor3 = COLORS.Panel,
-        BorderSizePixel = 0,
-    }, window)
-
-    create("UIPadding", {
-        PaddingTop = UDim.new(0, 12),
-        PaddingLeft = UDim.new(0, 8),
-        PaddingRight = UDim.new(0, 8),
-    }, sidebar)
-
-    create("UIListLayout", {
-        Padding = UDim.new(0, 6),
-        SortOrder = Enum.SortOrder.LayoutOrder,
-    }, sidebar)
-
-    create("Frame", {
-        Position = UDim2.new(0, 125, 0, 48),
-        Size = UDim2.new(0, 1, 1, -48),
-        BackgroundColor3 = COLORS.Border,
-        BorderSizePixel = 0,
-    }, window)
-
-    local pages = create("Frame", {
-        Name = "Pages",
-        Position = UDim2.new(0, 126, 0, 48),
-        Size = UDim2.new(1, -126, 1, -48),
-        BackgroundTransparency = 1,
-        ClipsDescendants = true,
-    }, window)
-
-    -- Floating logo when minimized
-    local floatingLogo = makeButton(screen, "T", 48)
-    floatingLogo.Name = "FloatingLogo"
-    floatingLogo.Size = UDim2.fromOffset(48, 48)
-    floatingLogo.Position = UDim2.new(0, 20, 0.5, -24)
-    floatingLogo.BackgroundColor3 = COLORS.Panel
-    floatingLogo.Font = Enum.Font.GothamBlack
-    floatingLogo.TextSize = 22
-    floatingLogo.Visible = false
-    floatingLogo.ZIndex = 20
-    outline(floatingLogo, 0.1)
-
-    local function switchTab(tab)
-        activeTab = tab
-
-        for _, entry in ipairs(tabs) do
-            local selected = entry == tab
-            entry.Page.Visible = selected
-
-            entry.Button.BackgroundColor3 =
-                selected and COLORS.Hover or COLORS.Panel
-
-            entry.Button.TextColor3 =
-                selected and COLORS.White or COLORS.Gray
+        local camera = workspace.CurrentCamera
+        if camera then
+            cameraConnection = camera:GetPropertyChangedSignal(
+                "ViewportSize"
+            ):Connect(updateLayout)
+            updateLayout()
         end
     end
 
-    function api:CreateTab(name)
-        assert(not destroyed, "Toshi-AI has been destroyed")
+    bindCamera()
 
-        local page = create("ScrollingFrame", {
-            Name = name .. "Page",
-            Size = UDim2.fromScale(1, 1),
-            BackgroundTransparency = 1,
-            BorderSizePixel = 0,
-            ScrollBarThickness = 3,
-            ScrollBarImageColor3 = COLORS.DarkGray,
-            CanvasSize = UDim2.new(),
-            AutomaticCanvasSize = Enum.AutomaticSize.Y,
-            Visible = false,
-        }, pages)
+    track(workspace:GetPropertyChangedSignal("CurrentCamera"), bindCamera)
 
-        create("UIPadding", {
-            PaddingTop = UDim.new(0, 14),
-            PaddingLeft = UDim.new(0, 13),
-            PaddingRight = UDim.new(0, 13),
-            PaddingBottom = UDim.new(0, 14),
-        }, page)
-
-        create("UIListLayout", {
-            Padding = UDim.new(0, 9),
-            SortOrder = Enum.SortOrder.LayoutOrder,
-        }, page)
-
-        local tabButton = makeButton(sidebar, name, 36)
-        tabButton.BackgroundColor3 = COLORS.Panel
-        tabButton.TextColor3 = COLORS.Gray
-        tabButton.TextXAlignment = Enum.TextXAlignment.Left
-        tabButton.Text = "   " .. name
-
-        local entry = {
-            Page = page,
-            Button = tabButton,
-        }
-        table.insert(tabs, entry)
-
-        track(tabButton.Activated:Connect(function()
-            switchTab(entry)
-        end))
-
-        local tabApi = {}
-
-        function tabApi:Section(value)
-            local heading = makeLabel(
-                page,
-                string.upper(value),
-                UDim2.new(1, 0, 0, 23),
-                COLORS.Gray,
-                Enum.Font.GothamBold
-            )
-            heading.TextSize = 10
-            return heading
-        end
-
-        function tabApi:Label(value)
-            local box = create("Frame", {
-                Size = UDim2.new(1, 0, 0, 42),
-                BackgroundColor3 = COLORS.Panel,
-                BorderSizePixel = 0,
-            }, page)
-
-            round(box, 8)
-            outline(box, 0.5)
-
-            local lbl = makeLabel(
-                box,
-                value,
-                UDim2.new(1, -22, 1, -10),
-                COLORS.Gray
-            )
-            lbl.Position = UDim2.fromOffset(11, 5)
-
-            return lbl
-        end
-
-        function tabApi:Button(value, callback)
-            local b = makeButton(page, value, 38)
-
-            track(b.Activated:Connect(function()
-                safeCallback(callback)
-            end))
-
-            return b
-        end
-
-        function tabApi:Toggle(value, default, callback)
-            local enabled = default == true
-            local b = makeButton(page, "", 40)
-
-            local lbl = makeLabel(
-                b,
-                value,
-                UDim2.new(1, -65, 1, 0),
-                COLORS.White
-            )
-            lbl.Position = UDim2.fromOffset(11, 0)
-
-            local trackFrame = create("Frame", {
-                Size = UDim2.fromOffset(34, 18),
-                Position = UDim2.new(1, -44, 0.5, -9),
-                BackgroundColor3 = enabled and COLORS.White
-                    or COLORS.DarkGray,
-                BorderSizePixel = 0,
-            }, b)
-            round(trackFrame, 20)
-
-            local knob = create("Frame", {
-                Size = UDim2.fromOffset(14, 14),
-                Position = enabled
-                    and UDim2.new(1, -16, 0.5, -7)
-                    or UDim2.new(0, 2, 0.5, -7),
-                BackgroundColor3 = COLORS.Background,
-                BorderSizePixel = 0,
-            }, trackFrame)
-            round(knob, 20)
-
-            local function setToggle(value, fire)
-                enabled = value == true
-
-                animate(trackFrame, 0.15, {
-                    BackgroundColor3 = enabled and COLORS.White
-                        or COLORS.DarkGray,
-                })
-
-                animate(knob, 0.15, {
-                    Position = enabled
-                        and UDim2.new(1, -16, 0.5, -7)
-                        or UDim2.new(0, 2, 0.5, -7),
-                })
-
-                if fire then
-                    safeCallback(callback, enabled)
-                end
-            end
-
-            track(b.Activated:Connect(function()
-                setToggle(not enabled, true)
-            end))
-
-            return {
-                Get = function()
-                    return enabled
-                end,
-
-                Set = function(_, value)
-                    setToggle(value, true)
-                end,
-            }
-        end
-
-        function tabApi:Slider(value, min, max, default, callback)
-            min = min or 0
-            max = max or 100
-
-            assert(max > min, "Slider max must be greater than min")
-
-            local current = math.clamp(default or min, min, max)
-
-            local box = create("Frame", {
-                Size = UDim2.new(1, 0, 0, 62),
-                BackgroundColor3 = COLORS.Element,
-                BorderSizePixel = 0,
-            }, page)
-            round(box, 8)
-            outline(box, 0.5)
-
-            local lbl = makeLabel(
-                box, value,
-                UDim2.new(1, -60, 0, 20),
-                COLORS.White
-            )
-            lbl.Position = UDim2.fromOffset(10, 5)
-
-            local valueLabel = makeLabel(
-                box, tostring(current),
-                UDim2.fromOffset(42, 20),
-                COLORS.Gray
-            )
-            valueLabel.Position = UDim2.new(1, -51, 0, 5)
-            valueLabel.TextXAlignment = Enum.TextXAlignment.Right
-
-            local rail = create("Frame", {
-                Position = UDim2.fromOffset(10, 39),
-                Size = UDim2.new(1, -20, 0, 5),
-                BackgroundColor3 = COLORS.DarkGray,
-                BorderSizePixel = 0,
-            }, box)
-            round(rail, 5)
-
-            local fill = create("Frame", {
-                Size = UDim2.new(
-                    (current - min) / (max - min), 0, 1, 0
-                ),
-                BackgroundColor3 = COLORS.White,
-                BorderSizePixel = 0,
-            }, rail)
-            round(fill, 5)
-
-            local knob = create("Frame", {
-                AnchorPoint = Vector2.new(0.5, 0.5),
-                Position = UDim2.new(
-                    (current - min) / (max - min), 0, 0.5, 0
-                ),
-                Size = UDim2.fromOffset(12, 12),
-                BackgroundColor3 = COLORS.White,
-                BorderSizePixel = 0,
-                ZIndex = 2,
-            }, rail)
-            round(knob, 10)
-
-            local function updateFromX(x)
-                local ratio = math.clamp(
-                    (x - rail.AbsolutePosition.X) /
-                        math.max(rail.AbsoluteSize.X, 1),
-                    0, 1
-                )
-
-                current = math.floor(min + (max - min) * ratio + 0.5)
-                ratio = (current - min) / (max - min)
-
-                valueLabel.Text = tostring(current)
-                fill.Size = UDim2.new(ratio, 0, 1, 0)
-                knob.Position = UDim2.new(ratio, 0, 0.5, 0)
-
-                safeCallback(callback, current)
-            end
-
-            local sliding = false
-
-            track(rail.InputBegan:Connect(function(input)
-                if input.UserInputType == Enum.UserInputType.MouseButton1
-                    or input.UserInputType == Enum.UserInputType.Touch then
-                    sliding = true
-                    updateFromX(input.Position.X)
-                end
-            end))
-
-            track(UserInputService.InputChanged:Connect(function(input)
-                if sliding and (
-                    input.UserInputType == Enum.UserInputType.MouseMovement
-                    or input.UserInputType == Enum.UserInputType.Touch
-                ) then
-                    updateFromX(input.Position.X)
-                end
-            end))
-
-            track(UserInputService.InputEnded:Connect(function(input)
-                if input.UserInputType == Enum.UserInputType.MouseButton1
-                    or input.UserInputType == Enum.UserInputType.Touch then
-                    sliding = false
-                end
-            end))
-
-            return {
-                Get = function()
-                    return current
-                end,
-            }
-        end
-
-        if not activeTab then
-            switchTab(entry)
-        end
-
-        return tabApi
-    end
-
-    -- Minimize and restore
-    local function setMinimized(value)
-        if destroyed then
-            return
-        end
-
-        minimized = value
-
-        if value then
-            window.Visible = false
-            floatingLogo.Visible = true
-        else
-            floatingLogo.Visible = false
-            window.Visible = true
-            window.BackgroundTransparency = 0
-        end
-    end
-
-    track(minimizeButton.Activated:Connect(function()
-        setMinimized(true)
-    end))
-
-    track(floatingLogo.Activated:Connect(function()
-        setMinimized(false)
-    end))
-
-    track(closeButton.Activated:Connect(function()
-        api:Destroy()
-    end))
-
-    function api:Minimize()
-        setMinimized(true)
-    end
-
-    function api:Restore()
-        setMinimized(false)
-    end
-
-    function api:Destroy()
-        if destroyed then
-            return
-        end
-
-        destroyed = true
-
-        for _, connection in ipairs(connections) do
-            connection:Disconnect()
-        end
-
-        gui:Destroy()
-    end
-
-    -- Draggable header
-    local dragging = false
-    local dragStart
-    local startPosition
-
-    track(header.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-            or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            dragStart = input.Position
-            startPosition = window.Position
-        end
-    end))
-
-    track(UserInputService.InputChanged:Connect(function(input)
-        if dragging and (
-            input.UserInputType == Enum.UserInputType.MouseMovement
-            or input.UserInputType == Enum.UserInputType.Touch
-        ) then
-            local delta = input.Position - dragStart
-
-            window.Position = UDim2.new(
-                startPosition.X.Scale,
-                startPosition.X.Offset + delta.X,
-                startPosition.Y.Scale,
-                startPosition.Y.Offset + delta.Y
-            )
-        end
-    end))
-
-    track(UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-            or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = false
-        end
-    end))
-
-    -- Loading animation
+    -- Initialize menu after UI construction
     task.spawn(function()
         local steps = {
             "Initializing interface...",
@@ -732,32 +810,33 @@ function SimpleUI.new(options)
         }
 
         for index, message in ipairs(steps) do
-            if destroyed then
+            if not isAlive() then
                 return
             end
 
-            loadingStatus.Text = message
-            progressText.Text = tostring(
-                math.floor(index / #steps * 100)
-            ) .. "%"
+            status.Text = message
 
-            local animation = animate(progress, 0.4, {
+            local animation = animate(progress, 0.3, {
                 Size = UDim2.fromScale(index / #steps, 1),
             })
 
+            percent.Text = tostring(
+                math.floor(index / #steps * 100)
+            ) .. "%"
+
             animation.Completed:Wait()
-            task.wait(0.12)
+            task.wait(0.08)
         end
 
-        if destroyed then
+        if not isAlive() then
             return
         end
 
-        animate(loading, 0.25, {
+        animate(loading, 0.2, {
             BackgroundTransparency = 1,
         }).Completed:Wait()
 
-        if destroyed then
+        if not isAlive() then
             return
         end
 
@@ -768,5 +847,4 @@ function SimpleUI.new(options)
     return api
 end
 
--- IMPORTANT: Keep this return at the end of the file.
-return SimpleUI
+return ToshiAI

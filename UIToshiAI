@@ -1,1 +1,322 @@
 
+-- SimpleUI.lua
+-- Simple Roblox UI Library
+
+local SimpleUI = {}
+
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+
+local COLORS = {
+    Background = Color3.fromRGB(22, 23, 30),
+    Header = Color3.fromRGB(30, 32, 42),
+    Element = Color3.fromRGB(38, 40, 52),
+    Hover = Color3.fromRGB(50, 53, 68),
+    Accent = Color3.fromRGB(110, 100, 255),
+    Text = Color3.fromRGB(240, 240, 250),
+    Muted = Color3.fromRGB(155, 158, 175),
+}
+
+local function create(className, props, parent)
+    local obj = Instance.new(className)
+
+    for key, value in pairs(props or {}) do
+        obj[key] = value
+    end
+
+    obj.Parent = parent
+    return obj
+end
+
+local function round(obj, radius)
+    create("UICorner", {
+        CornerRadius = UDim.new(0, radius or 8),
+    }, obj)
+end
+
+local function makeLabel(parent, text, size, color)
+    return create("TextLabel", {
+        BackgroundTransparency = 1,
+        Size = size,
+        Font = Enum.Font.Gotham,
+        Text = text,
+        TextColor3 = color or COLORS.Text,
+        TextSize = 13,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextTruncate = Enum.TextTruncate.AtEnd,
+    }, parent)
+end
+
+function SimpleUI.new(options)
+    options = options or {}
+
+    local player = game:GetService("Players").LocalPlayer
+    assert(player, "SimpleUI must be loaded from a LocalScript")
+
+    local gui = create("ScreenGui", {
+        Name = options.Name or "SimpleUI",
+        ResetOnSpawn = false,
+        ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+    }, player:WaitForChild("PlayerGui"))
+
+    local windowSize = options.Size or UDim2.fromOffset(420, 330)
+
+    local window = create("Frame", {
+        Name = "Window",
+        Size = windowSize,
+        Position = UDim2.new(0.5, -windowSize.X.Offset / 2, 0.5, -windowSize.Y.Offset / 2),
+        BackgroundColor3 = COLORS.Background,
+        BorderSizePixel = 0,
+        ClipsDescendants = true,
+    }, gui)
+
+    round(window, 12)
+
+    local header = create("Frame", {
+        Name = "Header",
+        Size = UDim2.new(1, 0, 0, 46),
+        BackgroundColor3 = COLORS.Header,
+        BorderSizePixel = 0,
+    }, window)
+
+    local title = makeLabel(
+        header,
+        options.Title or "SimpleUI",
+        UDim2.new(1, -55, 1, 0),
+        COLORS.Text
+    )
+    title.Position = UDim2.fromOffset(15, 0)
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 15
+
+    local close = create("TextButton", {
+        Size = UDim2.fromOffset(30, 30),
+        Position = UDim2.new(1, -38, 0, 8),
+        BackgroundColor3 = COLORS.Element,
+        Text = "X",
+        TextColor3 = COLORS.Text,
+        TextSize = 13,
+        Font = Enum.Font.GothamBold,
+        BorderSizePixel = 0,
+    }, header)
+
+    round(close, 8)
+
+    local content = create("ScrollingFrame", {
+        Name = "Content",
+        Position = UDim2.fromOffset(0, 46),
+        Size = UDim2.new(1, 0, 1, -46),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        ScrollBarThickness = 4,
+        ScrollBarImageColor3 = COLORS.Accent,
+        AutomaticCanvasSize = Enum.AutomaticSize.Y,
+        CanvasSize = UDim2.new(),
+    }, window)
+
+    create("UIPadding", {
+        PaddingLeft = UDim.new(0, 12),
+        PaddingRight = UDim.new(0, 12),
+        PaddingTop = UDim.new(0, 12),
+        PaddingBottom = UDim.new(0, 12),
+    }, content)
+
+    create("UIListLayout", {
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Padding = UDim.new(0, 8),
+    }, content)
+
+    -- Drag the window
+    local dragging = false
+    local dragStart
+    local startPosition
+
+    header.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPosition = window.Position
+
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (
+            input.UserInputType == Enum.UserInputType.MouseMovement
+            or input.UserInputType == Enum.UserInputType.Touch
+        ) then
+            local delta = input.Position - dragStart
+
+            window.Position = UDim2.new(
+                startPosition.X.Scale,
+                startPosition.X.Offset + delta.X,
+                startPosition.Y.Scale,
+                startPosition.Y.Offset + delta.Y
+            )
+        end
+    end)
+
+    local API = {
+        Screen = gui,
+        Window = window,
+    }
+
+    function API:Label(text)
+        local item = makeLabel(
+            content,
+            text,
+            UDim2.new(1, 0, 0, 28),
+            COLORS.Muted
+        )
+        item.TextWrapped = true
+        item.AutomaticSize = Enum.AutomaticSize.Y
+        return item
+    end
+
+    function API:Section(text)
+        local item = makeLabel(
+            content,
+            string.upper(text),
+            UDim2.new(1, 0, 0, 25),
+            COLORS.Accent
+        )
+        item.Font = Enum.Font.GothamBold
+        item.TextSize = 11
+        return item
+    end
+
+    function API:Button(text, callback)
+        local button = create("TextButton", {
+            Size = UDim2.new(1, 0, 0, 36),
+            BackgroundColor3 = COLORS.Element,
+            BorderSizePixel = 0,
+            Text = text,
+            TextColor3 = COLORS.Text,
+            Font = Enum.Font.GothamMedium,
+            TextSize = 13,
+            AutoButtonColor = false,
+        }, content)
+
+        round(button, 8)
+
+        button.MouseEnter:Connect(function()
+            TweenService:Create(button, TweenInfo.new(0.15), {
+                BackgroundColor3 = COLORS.Hover,
+            }):Play()
+        end)
+
+        button.MouseLeave:Connect(function()
+            TweenService:Create(button, TweenInfo.new(0.15), {
+                BackgroundColor3 = COLORS.Element,
+            }):Play()
+        end)
+
+        button.Activated:Connect(function()
+            if callback then
+                local ok, err = pcall(callback)
+                if not ok then
+                    warn("[SimpleUI] Button error:", err)
+                end
+            end
+        end)
+
+        return button
+    end
+
+    function API:Toggle(text, default, callback)
+        local enabled = default == true
+
+        local button = create("TextButton", {
+            Size = UDim2.new(1, 0, 0, 36),
+            BackgroundColor3 = COLORS.Element,
+            BorderSizePixel = 0,
+            Text = "",
+            AutoButtonColor = false,
+        }, content)
+
+        round(button, 8)
+
+        local toggleLabel = makeLabel(
+            button,
+            text,
+            UDim2.new(1, -60, 1, 0),
+            COLORS.Text
+        )
+        toggleLabel.Position = UDim2.fromOffset(10, 0)
+
+        local track = create("Frame", {
+            Size = UDim2.fromOffset(34, 18),
+            Position = UDim2.new(1, -44, 0.5, -9),
+            BackgroundColor3 = enabled and COLORS.Accent or COLORS.Hover,
+            BorderSizePixel = 0,
+        }, button)
+
+        round(track, 20)
+
+        local knob = create("Frame", {
+            Size = UDim2.fromOffset(14, 14),
+            Position = enabled
+                and UDim2.new(1, -16, 0.5, -7)
+                or UDim2.new(0, 2, 0.5, -7),
+            BackgroundColor3 = Color3.new(1, 1, 1),
+            BorderSizePixel = 0,
+        }, track)
+
+        round(knob, 20)
+
+        local function setToggle(value, fireCallback)
+            enabled = value == true
+
+            TweenService:Create(track, TweenInfo.new(0.15), {
+                BackgroundColor3 = enabled and COLORS.Accent or COLORS.Hover,
+            }):Play()
+
+            TweenService:Create(knob, TweenInfo.new(0.15), {
+                Position = enabled
+                    and UDim2.new(1, -16, 0.5, -7)
+                    or UDim2.new(0, 2, 0.5, -7),
+            }):Play()
+
+            if fireCallback and callback then
+                local ok, err = pcall(callback, enabled)
+                if not ok then
+                    warn("[SimpleUI] Toggle error:", err)
+                end
+            end
+        end
+
+        button.Activated:Connect(function()
+            setToggle(not enabled, true)
+        end)
+
+        local toggleAPI = {}
+
+        function toggleAPI:Get()
+            return enabled
+        end
+
+        function toggleAPI:Set(value)
+            setToggle(value, true)
+        end
+
+        return toggleAPI
+    end
+
+    function API:Destroy()
+        gui:Destroy()
+    end
+
+    close.Activated:Connect(function()
+        API:Destroy()
+    end)
+
+    return API
+end
+
+return SimpleUI

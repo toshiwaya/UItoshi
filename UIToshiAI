@@ -4,6 +4,10 @@
 -- Tabs: ESP / Aimbot / Self / Movement / Spectate / Settings
 -- Minimizes into a small badge. Click the badge to reopen.
 --
+-- v6.1.4.4 STANDALONE EXECUTE BUILD
+-- This file contains the full source; it does not download from GitHub.
+-- Camera FOV is unchanged on execution and changes only after manual slider/preset input.
+
 -- v6.1.2
 --   * Fixed Luau local-register overflow in setupConfig by reducing live top-level locals.
 --   * Camera FOV stays unchanged on execution; only slider/preset input applies it.
@@ -3113,10 +3117,10 @@ do
         46
     )
 
-    refreshers[#refreshers + 1] = function()
-        cameraFovSlider.set(cameraFov)
-        cameraPresetControl.set(cameraPreset)
-    end
+    -- Do not register camera controls as periodic refreshers.
+    -- createSlider.set() invokes its onChange callback, which would reapply
+    -- the FOV during routine UI refreshes and force the camera to 90 degrees.
+    -- The controls already render their initial values when they are created.
 
     resetSelfButton = buttonRow(
         selfPage, "Reset to defaults",

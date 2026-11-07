@@ -88,18 +88,18 @@ local function pickFont(name, fallback)
     return ok and font or fallback
 end
 
--- Accent is reserved for state (on, selected, active, focused); everything
--- else stays in the quiet slate range.
+-- Monochrome theme: black surfaces, white text, and one grey accent.
+-- There is intentionally no colour picker; the menu stays black and white.
 local Library = {
     Theme = {
-        Background   = Color3.fromRGB(21, 24, 33),
-        Topbar       = Color3.fromRGB(27, 31, 43),
-        Element      = Color3.fromRGB(34, 39, 53),
-        ElementHover = Color3.fromRGB(43, 49, 66),
-        Stroke       = Color3.fromRGB(54, 61, 82),
-        Text         = Color3.fromRGB(230, 232, 239),
-        SubText      = Color3.fromRGB(140, 148, 168),
-        Accent       = Color3.fromRGB(240, 179, 74),
+        Background   = Color3.fromRGB(9, 9, 9),
+        Topbar       = Color3.fromRGB(14, 14, 14),
+        Element      = Color3.fromRGB(22, 22, 22),
+        ElementHover = Color3.fromRGB(32, 32, 32),
+        Stroke       = Color3.fromRGB(50, 50, 50),
+        Text         = Color3.fromRGB(245, 245, 245),
+        SubText      = Color3.fromRGB(145, 145, 145),
+        Accent       = Color3.fromRGB(190, 190, 190),
         Font         = pickFont("BuilderSansMedium", Enum.Font.GothamMedium),
         FontBold     = pickFont("BuilderSansBold", Enum.Font.GothamBold),
     },

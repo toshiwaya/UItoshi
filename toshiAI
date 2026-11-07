@@ -503,7 +503,7 @@ function Window:_Build()
     })
     new("UIListLayout", {
         Parent = tabHolder,
-        Padding = UDim2.fromOffset(0, 4),
+        Padding = UDim.new(0, 4),
         SortOrder = Enum.SortOrder.LayoutOrder,
     })
 
@@ -636,7 +636,7 @@ function Window:_Build()
     })
     new("UIListLayout", {
         Parent = notifHolder,
-        Padding = UDim2.fromOffset(0, 8),
+        Padding = UDim.new(0, 8),
         SortOrder = Enum.SortOrder.LayoutOrder,
         HorizontalAlignment = Enum.HorizontalAlignment.Right,
     })
@@ -822,14 +822,14 @@ function Window:Notify(options)
 
     new("UIPadding", {
         Parent = note,
-        PaddingLeft = UDim2.fromOffset(12, 0),
-        PaddingRight = UDim2.fromOffset(12, 0),
-        PaddingTop = UDim2.fromOffset(10, 0),
-        PaddingBottom = UDim2.fromOffset(10, 0),
+        PaddingLeft = UDim.new(0, 12),
+        PaddingRight = UDim.new(0, 12),
+        PaddingTop = UDim.new(0, 10),
+        PaddingBottom = UDim.new(0, 10),
     })
     new("UIListLayout", {
         Parent = note,
-        Padding = UDim2.fromOffset(0, 4),
+        Padding = UDim.new(0, 4),
         SortOrder = Enum.SortOrder.LayoutOrder,
     })
 
@@ -997,12 +997,12 @@ function Tab:_Build()
 
     new("UIPadding", {
         Parent = scroller,
-        PaddingTop = UDim2.fromOffset(16, 0),
-        PaddingBottom = UDim2.fromOffset(16, 0),
+        PaddingTop = UDim.new(0, 16),
+        PaddingBottom = UDim.new(0, 16),
     })
     new("UIListLayout", {
         Parent = scroller,
-        Padding = UDim2.fromOffset(0, 16),
+        Padding = UDim.new(0, 16),
         SortOrder = Enum.SortOrder.LayoutOrder,
         HorizontalAlignment = Enum.HorizontalAlignment.Center,
     })
@@ -1123,7 +1123,7 @@ function Section:_Build(title, tab)
     })
     new("UIListLayout", {
         Parent = container,
-        Padding = UDim2.fromOffset(0, 6),
+        Padding = UDim.new(0, 6),
         SortOrder = Enum.SortOrder.LayoutOrder,
         HorizontalAlignment = Enum.HorizontalAlignment.Center,
     })
@@ -1657,12 +1657,12 @@ function Section:CreateDropdown(options)
 
     new("UIPadding", {
         Parent = panel,
-        PaddingTop = UDim2.fromOffset(4, 0),
-        PaddingBottom = UDim2.fromOffset(4, 0),
+        PaddingTop = UDim.new(0, 4),
+        PaddingBottom = UDim.new(0, 4),
     })
     new("UIListLayout", {
         Parent = panel,
-        Padding = UDim2.fromOffset(0, gap),
+        Padding = UDim.new(0, gap),
         SortOrder = Enum.SortOrder.LayoutOrder,
         HorizontalAlignment = Enum.HorizontalAlignment.Center,
     })
@@ -1776,8 +1776,8 @@ function Section:CreateDropdown(options)
         corner(optionButton, 5)
         new("UIPadding", {
             Parent = optionButton,
-            PaddingLeft = UDim2.fromOffset(10, 0),
-            PaddingRight = UDim2.fromOffset(10, 0),
+            PaddingLeft = UDim.new(0, 10),
+            PaddingRight = UDim.new(0, 10),
         })
 
         optionButton.MouseEnter:Connect(function()
@@ -1877,8 +1877,8 @@ function Section:CreateInput(options)
 
     new("UIPadding", {
         Parent = box,
-        PaddingLeft = UDim2.fromOffset(8, 0),
-        PaddingRight = UDim2.fromOffset(8, 0),
+        PaddingLeft = UDim.new(0, 8),
+        PaddingRight = UDim.new(0, 8),
     })
 
     local lastValue = box.Text
